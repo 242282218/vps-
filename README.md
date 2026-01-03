@@ -157,3 +157,16 @@ bash <(curl -sL kejilion.sh)
 ```bash
 wget -O box.sh https://raw.githubusercontent.com/BlueSkyXN/SKY-BOX/main/box.sh && chmod +x box.sh && clear && ./box.sh
 ```
+curl -fsSL https://get.docker.com | bash -s docker --mirror Aliyun && \
+sudo tee /etc/docker/daemon.json <<-'EOF'
+{
+  "registry-mirrors": [
+    "https://docker.mirrors.ustc.edu.cn",
+    "https://hub-mirror.c.163.com",
+    "https://mirror.baidubce.com",
+    "https://ccr.ccs.tencentyun.com"
+  ]
+}
+EOF && \
+sudo systemctl daemon-reexec && \
+sudo systemctl restart docker
