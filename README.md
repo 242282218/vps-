@@ -170,3 +170,12 @@ sudo tee /etc/docker/daemon.json <<-'EOF'
 EOF && \
 sudo systemctl daemon-reexec && \
 sudo systemctl restart docker
+
+
+
+docker system prune -a -f
+会删除：
+所有未使用镜像
+所有失败构建残留
+所有停止容器
+构建缓存
