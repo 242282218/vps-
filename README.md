@@ -258,3 +258,8 @@ docker system prune -a -f
 
 ```
 ```
+推荐（现代系统）
+ss -lntp
+
+只看某个端口（例如 3000）
+ss -lntp | grep ':3000'
