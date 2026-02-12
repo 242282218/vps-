@@ -8,6 +8,8 @@
 ### 融合怪测试脚本
 ```bash
 bash <(wget -qO- --no-check-certificate https://gitlab.com/spiritysdx/za/-/raw/main/ecs.sh)
+
+bash <(curl -sL https://run.NodeQuality.com)
 ````
 
 ---
@@ -33,23 +35,6 @@ curl -sL yabs.sh | bash -s -- -5
 ---
 
 ## 3️⃣ 流媒体 & IP 质量测试
-
-### 最常用流媒体检测
-
-```bash
-bash <(curl -L -s check.unlock.media)
-```
-
-### 原生流媒体检测
-
-```bash
-bash <(curl -sL Media.Check.Place)
-```
-
-### 高准确度区域检测
-
-```bash
-bash <(curl -L -s https://github.com/1-stream/RegionRestrictionCheck/raw/main/check.sh)
 ```
 
 ### IP 质量体检
@@ -73,17 +58,6 @@ wget https://raw.githubusercontent.com/Jimmyzxk/DNS-Alice-Unlock/refs/heads/main
 ```bash
 bash <(curl -sL bash.icu/speedtest)
 ```
-
-### Taier 测速
-
-```bash
-bash <(curl -sL res.yserver.ink/taier.sh)
-```
-
-### Hyperspeed
-
-```bash
-bash <(curl -Lso- https://bench.im/hyperspeed)
 ```
 
 ### 全球测速
