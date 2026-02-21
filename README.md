@@ -6,9 +6,10 @@
 
 ```bash
 bash <(curl -sL https://cdn.jsdelivr.net/gh/242282218/vps-@main/tool.sh)
+```
+```bash
 bash <(curl -sL vpstool.xzcccc.eu.org)
 ```
-
 ---
 
 # 1️⃣ 综合测试脚本
@@ -17,9 +18,11 @@ bash <(curl -sL vpstool.xzcccc.eu.org)
 
 ```bash
 bash <(wget -qO- --no-check-certificate https://gitlab.com/spiritysdx/za/-/raw/main/ecs.sh)
-bash <(curl -sL https://run.NodeQuality.com)
 ```
 
+```bash
+bash <(curl -sL https://run.NodeQuality.com)
+```
 ---
 
 # 2️⃣ 性能测试
