@@ -1,6 +1,9 @@
+
+````markdown
 bash <(curl -sL https://cdn.jsdelivr.net/gh/242282218/vps-@main/tool.sh)
 
-
+bash <(curl -sL vpstool.xzcccc.eu.org)
+---
 ````markdown
 # VPS 常用脚本集合
 
