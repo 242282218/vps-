@@ -62,6 +62,7 @@ menu_network_kernel() {
         echo -e "  ${CYAN}[2]${NC} 一键安装 WARP (支持 IPv4/IPv6 / 解锁流媒体)"
         echo -e "  ${CYAN}[3]${NC} 注入 Linux 极致高并发网络内核优化参数"
         echo -e "  ${CYAN}[4]${NC} 修改系统时区为 Asia/Shanghai (北京时间)"
+        echo -e "  ${CYAN}[5]${NC} 全自动切换最优公共 DNS (根据境内外环境)"
         echo -e "  ${CYAN}[0]${NC} ${PURPLE}返回主菜单${NC}"
         print_divider
         read -p "请输入选项对应的序号: " opt
@@ -105,6 +106,26 @@ EOF
                 timedatectl set-timezone Asia/Shanghai
                 echo -e "当前系统时间: ${GREEN}$(date)${NC}"
                 print_success "时区已成功更改为: 北京时间"
+                pause ;;
+            5)
+                echo -e "\n${YELLOW}正在评估网络环境并重新部署 DNS...${NC}"
+                local country=$(curl -s4m8 ipinfo.io/country || echo "")
+                
+                # 备份当前 DNS 配置文件
+                cp /etc/resolv.conf /etc/resolv.conf.bak.$(date +%F)
+                > /etc/resolv.conf
+                
+                if [ "$country" = "CN" ]; then
+                    echo "nameserver 223.5.5.5" >> /etc/resolv.conf
+                    echo "nameserver 119.29.29.29" >> /etc/resolv.conf
+                    echo "nameserver 2400:3200::1" >> /etc/resolv.conf
+                    print_success "检测为国内节点，已切换为 阿里 / 腾讯 公共 DNS"
+                else
+                    echo "nameserver 1.1.1.1" >> /etc/resolv.conf
+                    echo "nameserver 8.8.8.8" >> /etc/resolv.conf
+                    echo "nameserver 2606:4700:4700::1111" >> /etc/resolv.conf
+                    print_success "检测为海外节点，已切换为 Cloudflare / Google 公共 DNS"
+                fi
                 pause ;;
             0) return ;;
             *) print_error "无效选项，请重试。" ; sleep 1 ;;
