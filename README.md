@@ -1,10 +1,5 @@
 bash <(curl -sL https://cdn.jsdelivr.net/gh/242282218/vps-@main/tool.sh)
 
-bash <(curl -sL https://ghgo.xyz/https://raw.githubusercontent.com/242282218/vps-/main/tool.sh)
-
-bash <(curl -sL biturl.top/z6fyey)
-
-
 
 ````markdown
 # VPS 常用脚本集合
