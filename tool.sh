@@ -236,6 +236,7 @@ menu_system() {
         echo -e "${BOLD}${BLUE}▶ 🔧 系统维护与基础控制${NC}\n"
         echo -e "  ${CYAN}[1]${NC} 一键分配 Swap 虚拟内存 (防 OOM 内存爆满)"
         echo -e "  ${CYAN}[2]${NC} 卸载并清空当前 Swap 虚拟内存"
+        echo -e "  ${CYAN}[3]${NC} 🧹 系统垃圾清理与磁盘空间分析 (含日志、缓存清除)"
         echo -e "  ${CYAN}[0]${NC} ${PURPLE}返回主菜单${NC}"
         print_divider
         read -p "请输入选项对应的序号: " opt
@@ -266,6 +267,79 @@ menu_system() {
                 rm -f /swapfile
                 sed -i '/\/swapfile/d' /etc/fstab
                 print_success "Swap 已被彻底清除。"
+                pause ;;
+            3)
+                echo -e "\n${YELLOW}正在进行系统安全清理与磁盘分析...${NC}"
+                
+                # 依赖检查与安装 (优化：检测是否已安装 ncdu，只在不存在时进行包管理器更新与安装)
+                if ! command -v ncdu >/dev/null 2>&1; then
+                    echo -e "正在轻量级安装分析工具 ncdu..."
+                    if command -v apt >/dev/null 2>&1; then
+                        apt update -y >/dev/null 2>&1 && apt install -y ncdu >/dev/null 2>&1
+                    elif command -v apk >/dev/null 2>&1; then
+                        apk update >/dev/null 2>&1 && apk add ncdu >/dev/null 2>&1
+                    elif command -v yum >/dev/null 2>&1; then
+                        yum install -y epel-release ncdu >/dev/null 2>&1
+                    fi
+                fi
+
+                print_divider
+                echo -e "${CYAN}▶ 清理前磁盘使用情况:${NC}"
+                df -h /
+                
+                echo -e "\n${YELLOW}▶ 开始执行深度清理...${NC}"
+                
+                # APT / YUM 清理 (优化：支持 yum，并且增加静默输出)
+                if command -v apt >/dev/null 2>&1; then
+                    apt clean -y && apt autoclean -y && apt autoremove -y >/dev/null 2>&1
+                    echo -e "  ✔ APT 缓存及多余依赖已清理"
+                elif command -v yum >/dev/null 2>&1; then
+                    yum clean all >/dev/null 2>&1
+                    echo -e "  ✔ YUM 缓存已清理"
+                fi
+
+                # 日志清理
+                if command -v journalctl >/dev/null 2>&1; then
+                    journalctl --vacuum-time=3d >/dev/null 2>&1
+                    echo -e "  ✔ 系统日志已缩减至近 3 天"
+                fi
+
+                # npm 清理
+                if command -v npm >/dev/null 2>&1; then
+                    npm cache clean --force >/dev/null 2>&1
+                fi
+                rm -rf ~/.npm 2>/dev/null
+                echo -e "  ✔ npm / 前端缓存冗余已清除"
+                
+                # nvm 清理
+                if [ -d "$HOME/.nvm" ]; then
+                    rm -rf ~/.nvm/.cache 2>/dev/null
+                    echo -e "  ✔ nvm 缓存已清除"
+                fi
+
+                # 临时文件
+                rm -rf /tmp/* /var/tmp/* 2>/dev/null
+                echo -e "  ✔ /tmp 与 /var/tmp 系统临时文件已清理"
+
+                # Docker 清理
+                if command -v docker >/dev/null 2>&1; then
+                    docker system prune -a -f --volumes >/dev/null 2>&1
+                    echo -e "  ✔ Docker 无用镜像、停止的容器和孤离数据卷已清除"
+                fi
+                
+                print_divider
+                echo -e "${CYAN}▶ 清理后磁盘使用情况:${NC}"
+                df -h /
+                
+                echo -e "\n${YELLOW}▶ 根目录占用空间分析排行 (Top 10):${NC}"
+                du -h --max-depth=1 / 2>/dev/null | sort -hr | head -n 11
+                
+                echo -e "\n${YELLOW}▶ 查找 200MB 以上全局大文件 (Top 10):${NC}"
+                # 优化：采用 exec {} + 方式合并处理不仅提升查询速度，同时也用 du 规避了 ls 带来的列对齐问题
+                find / -type f -size +200M -exec du -h {} + 2>/dev/null | sort -hr | head -n 10
+                
+                echo ""
+                print_success "磁盘垃圾清理与扫描完成！若想进行更精细排查，可直接运行 ncdu 命令。"
                 pause ;;
             0) return ;;
             *) print_error "无效选项，请重试。" ; sleep 1 ;;
@@ -317,7 +391,7 @@ while true; do
     print_header
     echo -e "   ${CYAN}[1]${NC} 🌐 ${BOLD}网络与内核优化${NC} (BBR / WARP / 时区 / TCP内核注入)"
     echo -e "   ${CYAN}[2]${NC} 🐳 ${BOLD}Docker 运维面板${NC} (环境部署 / 容器控制 / 清理重置)"
-    echo -e "   ${CYAN}[3]${NC} 🔧 ${BOLD}系统与底层控制${NC} (Swap 配置管理)"
+    echo -e "   ${CYAN}[3]${NC} 🔧 ${BOLD}系统与底层控制${NC} (Swap 配置管理 / 空间清理)"
     echo -e "   ${CYAN}[4]${NC} 📊 ${BOLD}整机性能及测速${NC} (跑分 / 路由追踪 / 流媒体检测)\n"
     echo -e "   ${CYAN}[0]${NC} ❌ ${BOLD}退出工具箱${NC}"
     print_divider
