@@ -15,9 +15,12 @@ CYAN='\033[0;36m'
 BOLD='\033[1m'
 NC='\033[0m' # 重置颜色
 
-# 获取当前 IP 和系统信息供显示
-IPV4=$(curl -s4m8 https://ipinfo.io/ip || echo "获取失败")
-OS_INFO=$(grep PRETTY_NAME /etc/os-release | cut -d '"' -f 2 || echo "未知系统")
+# 运行环境信息，启动时统一初始化
+IPV4="获取失败"
+OS_INFO="未知系统"
+PACKAGE_MANAGER="未知"
+SYSTEMD_STATUS="不可用"
+ROOT_STATUS="否"
 CWD=$(pwd)
 
 # --- 界面交互工具 --- #
@@ -33,6 +36,7 @@ print_header() {
     print_divider
     echo -e "${BOLD}${GREEN}                   🚀 现代化 VPS 综合运维工具箱 🚀${NC}"
     echo -e "  系统: ${YELLOW}${OS_INFO}${NC}  |  IP: ${YELLOW}${IPV4}${NC}"
+    echo -e "  包管理器: ${YELLOW}${PACKAGE_MANAGER}${NC}  |  systemd: ${YELLOW}${SYSTEMD_STATUS}${NC}  |  root: ${YELLOW}${ROOT_STATUS}${NC}"
     print_divider
 }
 
@@ -52,6 +56,84 @@ print_success() {
     echo -e "${GREEN}✅ $1${NC}"
 }
 
+is_root() {
+    [ "${EUID:-$(id -u)}" -eq 0 ]
+}
+
+require_root() {
+    if ! is_root; then
+        print_error "$1 需要 root 权限，请使用 root 用户或 sudo 重新执行。"
+        return 1
+    fi
+    return 0
+}
+
+require_command() {
+    local command_name="$1"
+    local install_hint="$2"
+
+    if command -v "$command_name" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    print_error "缺少必要命令: $command_name"
+    if [ -n "$install_hint" ]; then
+        echo -e "${YELLOW}提示: $install_hint${NC}"
+    fi
+    return 1
+}
+
+detect_os_info() {
+    if [ -r /etc/os-release ]; then
+        OS_INFO=$(grep '^PRETTY_NAME=' /etc/os-release | cut -d '"' -f 2)
+        [ -n "$OS_INFO" ] || OS_INFO=$(grep '^ID=' /etc/os-release | cut -d '=' -f 2 | tr -d '"')
+    fi
+    [ -n "$OS_INFO" ] || OS_INFO="未知系统"
+}
+
+detect_package_manager() {
+    if command -v apt-get >/dev/null 2>&1; then
+        PACKAGE_MANAGER="apt-get"
+    elif command -v dnf >/dev/null 2>&1; then
+        PACKAGE_MANAGER="dnf"
+    elif command -v yum >/dev/null 2>&1; then
+        PACKAGE_MANAGER="yum"
+    elif command -v apk >/dev/null 2>&1; then
+        PACKAGE_MANAGER="apk"
+    else
+        PACKAGE_MANAGER="未检测到"
+    fi
+}
+
+detect_systemd_status() {
+    if command -v systemctl >/dev/null 2>&1 && [ -d /run/systemd/system ]; then
+        SYSTEMD_STATUS="可用"
+    else
+        SYSTEMD_STATUS="不可用"
+    fi
+}
+
+init_environment() {
+    if [ "$(uname -s 2>/dev/null)" != "Linux" ]; then
+        print_error "当前脚本仅支持 Linux 系统。"
+        exit 1
+    fi
+
+    detect_os_info
+    detect_package_manager
+    detect_systemd_status
+
+    if is_root; then
+        ROOT_STATUS="是"
+    else
+        ROOT_STATUS="否"
+    fi
+
+    if command -v curl >/dev/null 2>&1; then
+        IPV4=$(curl -s4m8 https://ipinfo.io/ip || echo "获取失败")
+    fi
+}
+
 # --- 1. 网络与内核优化功能 --- #
 
 menu_network_kernel() {
@@ -67,15 +149,21 @@ menu_network_kernel() {
         print_divider
         read -p "请输入选项对应的序号: " opt
         case $opt in
-            1) 
+            1)
+                require_root "安装 BBR" || { pause; continue; }
+                require_command "wget" "请先安装 wget 后重试。" || { pause; continue; }
                 echo -e "\n${YELLOW}正在加载网络主流 BBR 脚本...${NC}"
                 wget -N --no-check-certificate "https://raw.githubusercontent.com/chiakge/Linux-NetSpeed/master/tcp.sh" && chmod +x tcp.sh && ./tcp.sh
                 pause ;;
             2)
+                require_root "安装 WARP" || { pause; continue; }
+                require_command "wget" "请先安装 wget 后重试。" || { pause; continue; }
                 echo -e "\n${YELLOW}正在加载 fscarmen WARP 脚本...${NC}"
                 wget -N https://gitlab.com/fscarmen/warp/-/raw/main/menu.sh && bash menu.sh
                 pause ;;
             3)
+                require_root "注入内核优化参数" || { pause; continue; }
+                require_command "sysctl" "请先安装 procps/procps-ng 后重试。" || { pause; continue; }
                 echo -e "\n${YELLOW}正在备份并注入 TCP高并发与吞吐内核优化参数...${NC}"
                 cp /etc/sysctl.conf /etc/sysctl.conf.bak.$(date +%F)
                 cat >> /etc/sysctl.conf << EOF
@@ -102,12 +190,16 @@ EOF
                 print_success "参数写入完成，并已立即生效!"
                 pause ;;
             4)
+                require_root "修改系统时区" || { pause; continue; }
+                require_command "timedatectl" "当前系统缺少 timedatectl，请手动配置时区或安装 systemd 工具。" || { pause; continue; }
                 echo -e "\n${YELLOW}正在设置时区...${NC}"
                 timedatectl set-timezone Asia/Shanghai
                 echo -e "当前系统时间: ${GREEN}$(date)${NC}"
                 print_success "时区已成功更改为: 北京时间"
                 pause ;;
             5)
+                require_root "修改系统 DNS" || { pause; continue; }
+                require_command "curl" "请先安装 curl 后重试。" || { pause; continue; }
                 echo -e "\n${YELLOW}正在评估网络环境并重新部署 DNS...${NC}"
                 local country=$(curl -s4m8 ipinfo.io/country || echo "")
                 
@@ -310,7 +402,9 @@ menu_docker() {
         print_divider
         read -p "请输入选项对应的序号: " opt
         case $opt in
-            1) 
+            1)
+                require_root "安装 Docker" || { pause; continue; }
+                require_command "curl" "请先安装 curl 后重试。" || { pause; continue; }
                 echo -e "\n${YELLOW}正在检查并安装 Docker...${NC}"
                 local docker_network_region
                 docker_network_region=$(detect_network_region)
@@ -329,6 +423,7 @@ menu_docker() {
                 configure_docker_mirror "$docker_network_region"
                 pause ;;
             2)
+                require_root "安装 Watchtower" || { pause; continue; }
                 if install_watchtower_auto_update; then
                     print_success "Watchtower 自动更新已启用：每 6 小时检查一次，并自动清理旧镜像。"
                 else
@@ -336,6 +431,8 @@ menu_docker() {
                 fi
                 pause ;;
             3)
+                require_root "管理 Docker 容器" || { pause; continue; }
+                ensure_docker_ready || { pause; continue; }
                 print_divider
                 docker ps -a --format "table {{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Ports}}"
                 print_divider
@@ -355,6 +452,8 @@ menu_docker() {
                 fi
                 pause ;;
             4)
+                require_root "管理 Docker 镜像" || { pause; continue; }
+                ensure_docker_ready || { pause; continue; }
                 print_divider
                 docker images
                 print_divider
@@ -371,6 +470,8 @@ menu_docker() {
                 fi
                 pause ;;
             5)
+                require_root "执行 Docker 深层空间清理" || { pause; continue; }
+                ensure_docker_ready || { pause; continue; }
                 echo -e "\n${YELLOW}⚠️ 警告：此操作将清理所有处于停止状态的容器、孤立镜像和无用的挂载卷！${NC}"
                 read -p "确认执行清理? [y/N]: " confirm
                 if [[ "$confirm" =~ ^[Yy]$ ]]; then
@@ -399,6 +500,8 @@ menu_system() {
         read -p "请输入选项对应的序号: " opt
         case $opt in
             1)
+                require_root "创建 Swap" || { pause; continue; }
+                require_command "free" "请先安装 procps/procps-ng 后重试。" || { pause; continue; }
                 echo -e "\n当前内存情况:"
                 free -m
                 read -p "请输入期望的 Swap 空间大小 (单位: MB, 例如: 2048): " swap_size
@@ -419,6 +522,7 @@ menu_system() {
                 fi
                 pause ;;
             2)
+                require_root "清理 Swap" || { pause; continue; }
                 echo -e "\n${YELLOW}正在关闭和清理 Swap 文件...${NC}"
                 swapoff -a
                 rm -f /swapfile
@@ -426,6 +530,7 @@ menu_system() {
                 print_success "Swap 已被彻底清除。"
                 pause ;;
             3)
+                require_root "执行系统清理" || { pause; continue; }
                 echo -e "\n${YELLOW}正在进行系统安全清理与磁盘分析...${NC}"
                 
                 # 依赖检查与安装 (优化：检测是否已安装 ncdu，只在不存在时进行包管理器更新与安装)
@@ -542,22 +647,106 @@ menu_test() {
 }
 
 
+# --- 5. 系统信息总览 --- #
+
+get_first_ipv4() {
+    if command -v hostname >/dev/null 2>&1; then
+        hostname -I 2>/dev/null | tr ' ' '\n' | grep -m1 '^[0-9]\{1,3\}\.' || echo "未检测到"
+    else
+        echo "未检测到"
+    fi
+}
+
+get_first_ipv6() {
+    if command -v ip >/dev/null 2>&1; then
+        ip -6 addr show scope global 2>/dev/null | grep -m1 'inet6' | awk '{print $2}' || echo "未检测到"
+    else
+        echo "未检测到"
+    fi
+}
+
+get_cpu_model() {
+    if [ -r /proc/cpuinfo ]; then
+        grep -m1 'model name' /proc/cpuinfo | cut -d ':' -f 2- | sed 's/^ //'
+    else
+        echo "未知"
+    fi
+}
+
+get_tcp_congestion_control() {
+    if command -v sysctl >/dev/null 2>&1; then
+        sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null || echo "未知"
+    else
+        echo "未知"
+    fi
+}
+
+get_docker_status() {
+    if ! command -v docker >/dev/null 2>&1; then
+        echo "未安装"
+    elif docker info >/dev/null 2>&1; then
+        echo "已安装，服务可用"
+    else
+        echo "已安装，服务不可用"
+    fi
+}
+
+show_system_overview() {
+    print_header
+    echo -e "${BOLD}${BLUE}▶ 🖥️ 系统信息总览${NC}\n"
+
+    echo -e "${CYAN}基础信息:${NC}"
+    echo -e "  系统版本: ${YELLOW}${OS_INFO}${NC}"
+    echo -e "  内核版本: ${YELLOW}$(uname -r 2>/dev/null || echo "未知")${NC}"
+    echo -e "  系统架构: ${YELLOW}$(uname -m 2>/dev/null || echo "未知")${NC}"
+    echo -e "  运行时间: ${YELLOW}$(uptime -p 2>/dev/null || echo "未知")${NC}"
+    echo -e "  系统负载: ${YELLOW}$(awk '{print $1", "$2", "$3}' /proc/loadavg 2>/dev/null || echo "未知")${NC}"
+
+    echo -e "\n${CYAN}硬件资源:${NC}"
+    echo -e "  CPU 型号: ${YELLOW}$(get_cpu_model)${NC}"
+    echo -e "  CPU 核心: ${YELLOW}$(nproc 2>/dev/null || echo "未知")${NC}"
+    echo -e "  内存使用:${NC}"
+    free -h 2>/dev/null || echo "  未检测到 free 命令"
+    echo -e "\n  根分区磁盘:${NC}"
+    df -h / 2>/dev/null || echo "  未检测到 df 命令"
+
+    echo -e "\n${CYAN}网络状态:${NC}"
+    echo -e "  公网 IPv4: ${YELLOW}${IPV4}${NC}"
+    echo -e "  本机 IPv4: ${YELLOW}$(get_first_ipv4)${NC}"
+    echo -e "  本机 IPv6: ${YELLOW}$(get_first_ipv6)${NC}"
+    echo -e "  TCP 拥塞控制: ${YELLOW}$(get_tcp_congestion_control)${NC}"
+
+    echo -e "\n${CYAN}运行环境:${NC}"
+    echo -e "  包管理器: ${YELLOW}${PACKAGE_MANAGER}${NC}"
+    echo -e "  systemd: ${YELLOW}${SYSTEMD_STATUS}${NC}"
+    echo -e "  root 权限: ${YELLOW}${ROOT_STATUS}${NC}"
+    echo -e "  Docker: ${YELLOW}$(get_docker_status)${NC}"
+
+    print_divider
+    pause
+}
+
+
 # --- 顶级主菜单循环 --- #
+
+init_environment
 
 while true; do
     print_header
     echo -e "   ${CYAN}[1]${NC} 🌐 ${BOLD}网络与内核优化${NC} (BBR / WARP / 时区 / TCP内核注入)"
     echo -e "   ${CYAN}[2]${NC} 🐳 ${BOLD}Docker 运维面板${NC} (环境部署 / 容器控制 / 清理重置)"
     echo -e "   ${CYAN}[3]${NC} 🔧 ${BOLD}系统与底层控制${NC} (Swap 配置管理 / 空间清理)"
-    echo -e "   ${CYAN}[4]${NC} 📊 ${BOLD}整机性能及测速${NC} (跑分 / 路由追踪 / 流媒体检测)\n"
+    echo -e "   ${CYAN}[4]${NC} 📊 ${BOLD}整机性能及测速${NC} (跑分 / 路由追踪 / 流媒体检测)"
+    echo -e "   ${CYAN}[5]${NC} 🖥️ ${BOLD}系统信息总览${NC} (系统 / 资源 / 网络 / Docker)\n"
     echo -e "   ${CYAN}[0]${NC} ❌ ${BOLD}退出工具箱${NC}"
     print_divider
-    read -p " 🟢 期待您的指令 [0-4]: " main_opt
+    read -p " 🟢 期待您的指令 [0-5]: " main_opt
     case $main_opt in
         1) menu_network_kernel ;;
         2) menu_docker ;;
         3) menu_system ;;
         4) menu_test ;;
+        5) show_system_overview ;;
         0) 
             echo -e "\n${GREEN}拜拜！祝编码愉悦~ 👋${NC}\n"
             exit 0 
