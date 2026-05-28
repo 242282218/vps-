@@ -511,7 +511,7 @@ menu_test() {
     while true; do
         print_header
         echo -e "${BOLD}${BLUE}▶ 📊 性能测速与媒体流解锁检测${NC}\n"
-        echo -e "  ${CYAN}[1]${NC} 全网节点质量检测仪 (NodeQuality)"
+        echo -e "  ${CYAN}[1]${NC} 全量测试 (NodeQuality)"
         echo -e "  ${CYAN}[2]${NC} 追踪三网回程路由情况 (BestTrace)"
         echo -e "  ${CYAN}[3]${NC} 全球综合网络双向测速 (nws.sh)"
         echo -e "  ${CYAN}[4]${NC} 纯 IP 综合质量度体检 (IP.Check.Place)"
