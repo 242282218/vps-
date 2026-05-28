@@ -136,49 +136,206 @@ EOF
 
 # --- 2. Docker 高级管理 --- #
 
-add_docker_mirror() {
-    echo -e "\n${YELLOW}为 Docker 注入国内优质镜像加速源 (1ms.run, daocloud 等)...${NC}"
+check_url_reachable() {
+    local url="$1"
+    curl -fsSL4m5 --connect-timeout 3 -o /dev/null "$url" 2>/dev/null
+}
+
+detect_network_region() {
+    local country
+    local endpoint
+
+    for endpoint in "https://ipinfo.io/country" "https://ifconfig.co/country-iso" "https://ipapi.co/country/"; do
+        country=$(curl -fsSL4m6 --connect-timeout 3 "$endpoint" 2>/dev/null | tr -d '[:space:]' | tr '[:lower:]' '[:upper:]')
+        if [ "$country" = "CN" ]; then
+            echo "CN"
+            return 0
+        fi
+        if [ -n "$country" ] && [ ${#country} -le 3 ]; then
+            echo "GLOBAL"
+            return 0
+        fi
+    done
+
+    if check_url_reachable "https://mirrors.aliyun.com/docker-ce/linux/static/stable/" || check_url_reachable "https://docker.m.daocloud.io/v2/"; then
+        if ! check_url_reachable "https://registry-1.docker.io/v2/"; then
+            echo "CN"
+            return 0
+        fi
+    fi
+
+    echo "GLOBAL"
+}
+
+restart_docker_service() {
+    if command -v systemctl >/dev/null 2>&1 && systemctl list-unit-files docker.service >/dev/null 2>&1; then
+        systemctl daemon-reload
+        systemctl restart docker
+        return $?
+    fi
+
+    if command -v service >/dev/null 2>&1; then
+        service docker restart
+        return $?
+    fi
+
+    return 0
+}
+
+configure_docker_mirror() {
+    local network_region="$1"
+    local daemon_file="/etc/docker/daemon.json"
+
+    if [ "$network_region" != "CN" ]; then
+        echo -e "${YELLOW}检测为海外网络环境，跳过 Docker 国内镜像源注入。${NC}"
+        return 0
+    fi
+
+    echo -e "\n${YELLOW}检测为国内网络环境，为 Docker 注入国内镜像加速源...${NC}"
     mkdir -p /etc/docker
-    cat > /etc/docker/daemon.json << EOF
+    if [ -f "$daemon_file" ]; then
+        cp "$daemon_file" "$daemon_file.bak.$(date +%F-%H%M%S)"
+    fi
+
+    if command -v python3 >/dev/null 2>&1; then
+        python3 - <<'PY'
+import json
+from pathlib import Path
+
+path = Path('/etc/docker/daemon.json')
+mirrors = [
+    'https://docker.1ms.run',
+    'https://docker.m.daocloud.io',
+    'https://dockerproxy.net',
+    'https://hub.rat.dev',
+]
+
+config = {}
+if path.exists() and path.read_text(encoding='utf-8').strip():
+    try:
+        config = json.loads(path.read_text(encoding='utf-8'))
+    except json.JSONDecodeError:
+        config = {}
+
+existing = config.get('registry-mirrors', [])
+if not isinstance(existing, list):
+    existing = []
+config['registry-mirrors'] = list(dict.fromkeys(mirrors + existing))
+path.write_text(json.dumps(config, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+PY
+    else
+        cat > "$daemon_file" << EOF
 {
   "registry-mirrors": [
     "https://docker.1ms.run",
-    "https://docker.m.ixdev.cn",
-    "https://hub.rat.dev",
+    "https://docker.m.daocloud.io",
     "https://dockerproxy.net",
-    "https://docker.m.daocloud.io"
+    "https://hub.rat.dev"
   ]
 }
 EOF
-    systemctl daemon-reload
-    systemctl restart docker
-    print_success "Docker 国内镜像源配置完成！"
+    fi
+
+    if restart_docker_service; then
+        print_success "Docker 国内镜像源配置完成！"
+    else
+        print_error "Docker 镜像源已写入，但 Docker 重启失败，请手动检查服务状态。"
+        return 1
+    fi
+}
+
+install_docker() {
+    local network_region="$1"
+    local install_script="/tmp/get-docker.sh"
+    local install_status
+    local install_url="https://get.docker.com"
+
+    if ! curl -fsSL4m20 --connect-timeout 8 "$install_url" -o "$install_script"; then
+        return 1
+    fi
+
+    if [ "$network_region" = "CN" ]; then
+        bash "$install_script" docker --mirror Aliyun
+    else
+        bash "$install_script"
+    fi
+    install_status=$?
+    rm -f "$install_script"
+    return "$install_status"
+}
+
+ensure_docker_ready() {
+    if ! command -v docker >/dev/null 2>&1; then
+        print_error "未检测到 Docker，请先执行 [1] 一键安装 Docker。"
+        return 1
+    fi
+
+    if ! docker info >/dev/null 2>&1; then
+        print_error "Docker 服务不可用，请先启动 Docker 后再重试。"
+        return 1
+    fi
+
+    return 0
+}
+
+install_watchtower_auto_update() {
+    ensure_docker_ready || return 1
+
+    echo -e "\n${YELLOW}正在部署 Watchtower 容器自动更新服务...${NC}"
+    if docker ps -a --format '{{.Names}}' | grep -qx 'watchtower'; then
+        echo -e "${YELLOW}检测到已存在 watchtower，正在重建以应用当前配置...${NC}"
+        docker rm -f watchtower >/dev/null 2>&1 || return 1
+    fi
+
+    docker run -d \
+      --name watchtower \
+      --restart unless-stopped \
+      -e DOCKER_API_VERSION=1.54 \
+      -v /var/run/docker.sock:/var/run/docker.sock \
+      containrrr/watchtower \
+      --interval 21600 \
+      --cleanup
 }
 
 menu_docker() {
     while true; do
         print_header
         echo -e "${BOLD}${BLUE}▶ 🐳 Docker 自动化高级控制平面${NC}\n"
-        echo -e "  ${CYAN}[1]${NC} ⚡ 一键安装 Docker (自动识别系统并注入国内镜像源)"
-        echo -e "  ${CYAN}[2]${NC} 📦 快速容器管理 (启动 / 停止 / 重启 / 强制删除)"
-        echo -e "  ${CYAN}[3]${NC} 💿 快捷镜像管理 (拉取 / 查看 / 删除映像)"
-        echo -e "  ${CYAN}[4]${NC} 🧹 深层空间清理 (清空所有未使用容器, 网络及孤儿数据卷)"
+        echo -e "  ${CYAN}[1]${NC} ⚡ 一键安装 Docker (根据网络环境决定是否注入国内镜像源)"
+        echo -e "  ${CYAN}[2]${NC} 🔄 安装 Watchtower 自动更新容器 (每 6 小时检查并清理旧镜像)"
+        echo -e "  ${CYAN}[3]${NC} 📦 快速容器管理 (启动 / 停止 / 重启 / 强制删除)"
+        echo -e "  ${CYAN}[4]${NC} 💿 快捷镜像管理 (拉取 / 查看 / 删除映像)"
+        echo -e "  ${CYAN}[5]${NC} 🧹 深层空间清理 (清空所有未使用容器, 网络及孤儿数据卷)"
         echo -e "  ${CYAN}[0]${NC} ${PURPLE}返回主菜单${NC}"
         print_divider
         read -p "请输入选项对应的序号: " opt
         case $opt in
             1) 
                 echo -e "\n${YELLOW}正在检查并安装 Docker...${NC}"
+                local docker_network_region
+                docker_network_region=$(detect_network_region)
                 if ! command -v docker &> /dev/null; then
-                    curl -fsSL https://get.docker.com | bash -s docker --mirror Aliyun
-                    systemctl enable docker && systemctl start docker
-                    print_success "Docker 本身安装完毕！"
+                    if install_docker "$docker_network_region"; then
+                        systemctl enable docker && systemctl start docker
+                        print_success "Docker 本身安装完毕！"
+                    else
+                        print_error "Docker 安装失败，请检查网络或安装源。"
+                        pause
+                        continue
+                    fi
                 else
                     echo -e "${YELLOW}检测到系统已安装 Docker。${NC}"
                 fi
-                add_docker_mirror
+                configure_docker_mirror "$docker_network_region"
                 pause ;;
             2)
+                if install_watchtower_auto_update; then
+                    print_success "Watchtower 自动更新已启用：每 6 小时检查一次，并自动清理旧镜像。"
+                else
+                    print_error "Watchtower 自动更新部署失败。"
+                fi
+                pause ;;
+            3)
                 print_divider
                 docker ps -a --format "table {{.ID}}\t{{.Names}}\t{{.Status}}\t{{.Ports}}"
                 print_divider
@@ -197,7 +354,7 @@ menu_docker() {
                     fi
                 fi
                 pause ;;
-            3)
+            4)
                 print_divider
                 docker images
                 print_divider
@@ -213,7 +370,7 @@ menu_docker() {
                     fi
                 fi
                 pause ;;
-            4)
+            5)
                 echo -e "\n${YELLOW}⚠️ 警告：此操作将清理所有处于停止状态的容器、孤立镜像和无用的挂载卷！${NC}"
                 read -p "确认执行清理? [y/N]: " confirm
                 if [[ "$confirm" =~ ^[Yy]$ ]]; then
